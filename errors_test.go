@@ -162,6 +162,13 @@ func (*errorsSuite) TestCause(c *gc.C) {
 	c.Assert(errgo.Cause(err), gc.Equals, causeErr)
 }
 
+func (*errorsSuite) TestWithCausefNoMessage(c *gc.C) {
+	cause := errgo.New("cause")
+	err := errgo.WithCausef(nil, cause, "")
+	c.Assert(err, gc.ErrorMatches, "cause")
+	c.Assert(errgo.Cause(err), gc.Equals, cause)
+}
+
 func (*errorsSuite) TestDetails(c *gc.C) {
 	c.Assert(errgo.Details(nil), gc.Equals, "[]")
 
@@ -222,11 +229,6 @@ func (*errorsSuite) TestMatch(c *gc.C) {
 	}
 }
 
-func (*errorsSuite) TestLocation(c *gc.C) {
-	loc := errgo.Location{File: "foo", Line: 35}
-	c.Assert(loc.String(), gc.Equals, "foo:35")
-}
-
 func checkErr(c *gc.C, err, underlying error, msg string, details string, cause error) {
 	c.Assert(err, gc.NotNil)
 	c.Assert(err.Error(), gc.Equals, msg)
@@ -253,22 +255,20 @@ func replaceLocations(s string) string {
 		if i == -1 {
 			panic("no second $")
 		}
-		t += location(s[0:i]).String()
+		file, line := location(s[0:i])
+		t += fmt.Sprintf("%s:%d", file, line)
 		s = s[i+1:]
 	}
 	t += s
 	return t
 }
 
-func location(tag string) errgo.Location {
+func location(tag string) (string, int) {
 	line, ok := tagToLine[tag]
 	if !ok {
 		panic(fmt.Errorf("tag %q not found", tag))
 	}
-	return errgo.Location{
-		File: filename,
-		Line: line,
-	}
+	return filename, line
 }
 
 var tagToLine = make(map[string]int)

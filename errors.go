@@ -19,22 +19,6 @@ import (
 
 const debug = false
 
-// Location describes a source code location.
-type Location struct {
-	File string
-	Line int
-}
-
-// String returns a location in filename.go:99 format.
-func (loc Location) String() string {
-	return fmt.Sprintf("%s:%d", loc.File, loc.Line)
-}
-
-// IsSet reports whether the location has been set.
-func (loc Location) IsSet() bool {
-	return loc.File != ""
-}
-
 // Err holds a description of an error along with information about
 // where the error was created.
 //
@@ -53,14 +37,15 @@ type Err struct {
 	// Underlying holds the underlying error, if any.
 	Underlying_ error
 
-	// Location holds the source code location where the error was
+	// File and Line identify the source code location where the error was
 	// created.
-	Location_ Location
+	File string
+	Line int
 }
 
 // Location implements Locationer.
-func (e *Err) Location() Location {
-	return e.Location_
+func (e *Err) Location() (file string, line int) {
+	return e.File, e.Line
 }
 
 // Underlying returns the underlying error if any.
@@ -120,10 +105,12 @@ type Wrapper interface {
 	Underlying() error
 }
 
-// Location can be implemented by any error type
+// Locationer can be implemented by any error type
 // that wants to expose the source location of an error.
 type Locationer interface {
-	Location() Location
+	// Location returns the name of the file and the line
+	// number associated with an error.
+	Location() (file string, line int)
 }
 
 // Details returns information about the stack of
@@ -145,9 +132,9 @@ func Details(err error) string {
 	for {
 		s = append(s, '{')
 		if err, ok := err.(Locationer); ok {
-			loc := err.Location()
-			if loc.IsSet() {
-				s = append(s, loc.String()...)
+			file, line := err.Location()
+			if file != "" {
+				s = append(s, fmt.Sprintf("%s:%d", file, line)...)
 				s = append(s, ": "...)
 			}
 		}
@@ -180,7 +167,7 @@ func Details(err error) string {
 // e.Location, at callDepth stack frames above the call.
 func (e *Err) SetLocation(callDepth int) {
 	_, file, line, _ := runtime.Caller(callDepth + 1)
-	e.Location_ = Location{file, line}
+	e.File, e.Line = file, line
 }
 
 func setLocation(err error, callDepth int) {
@@ -336,12 +323,19 @@ func MaskFunc(allow ...func(error) bool) func(error, ...func(error) bool) error 
 // WithCausef returns a new Error that wraps the given
 // (possibly nil) underlying error and associates it with
 // the given cause. The given formatted message context
-// will also be added.
+// will also be added. If f is empty and has no arguments,
+// the message will be the same as the cause.
 func WithCausef(underlying, cause error, f string, a ...interface{}) error {
+	var msg string
+	if f == "" && len(a) == 0 && cause != nil {
+		msg = cause.Error()
+	} else {
+		msg = fmt.Sprintf(f, a...)
+	}
 	err := &Err{
 		Underlying_: underlying,
 		Cause_:      cause,
-		Message_:    fmt.Sprintf(f, a...),
+		Message_:    msg,
 	}
 	err.SetLocation(1)
 	return err
